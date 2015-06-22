@@ -3,6 +3,9 @@ require 'forwardable'
 
 module Sunspot
   module Rails
+
+    class SunspotRefusesToStartError < StandardError; end
+
     class Tester
       VERSION = '1.0.0'
       
@@ -10,31 +13,57 @@ module Sunspot
         extend Forwardable
         
         attr_accessor :server, :started, :pid
+        attr_accessor :retries, :timeout
         
         def start_original_sunspot_session
-          unless started?
-            self.server = Sunspot::Rails::Server.new
-            self.started = Time.now
-            self.pid = fork do
-              $stderr.reopen('/dev/null')
-              $stdout.reopen('/dev/null')
-              server.run
+          @retries ||= 3
+          @timeout ||= 20
+
+          begin
+            unless started?
+              self.server = Sunspot::Rails::Server.new
+              self.started = Time.now
+              self.pid = fork do
+                $stderr.reopen('/dev/null')
+                $stdout.reopen('/dev/null')
+                server.run
+              end
+              kill_at_exit
+              give_feedback
             end
-            kill_at_exit
-            give_feedback
+          rescue SunspotRefusesToStartError
+            @retries -= 1
+
+            if @retries > 0
+              puts "Sunspot not starting - retrying"
+              kill_process
+              self.server = nil
+              self.pid = nil
+              sleep(2)
+              retry
+            else
+              puts "Sunspot server failed to start after multiple retries"
+            end
           end
         end
         
         def started?
           not server.nil?
         end
-        
+
+        def kill_process
+          Process.kill('TERM', pid)
+        end
+
         def kill_at_exit
-          at_exit { Process.kill('TERM', pid) }
+          at_exit { kill_process }
         end
         
         def give_feedback
-          puts 'Sunspot server is starting...' while starting
+          while starting
+            raise SunspotRefusesToStartError if startup_seconds > @timeout
+            puts 'Sunspot server is starting...'
+          end
           puts "Sunspot server took #{seconds} seconds to start"
         end
       
@@ -45,9 +74,13 @@ module Sunspot
         rescue Errno::ECONNREFUSED
           true
         end
-        
+
+        def startup_seconds
+          Time.now - started
+        end
+
         def seconds
-          '%.2f' % (Time.now - started)
+          '%.2f' % startup_seconds
         end
       
         def uri
