@@ -8,13 +8,13 @@ module Sunspot
 
     class Tester
       VERSION = '1.0.0'
-      
+
       class << self
         extend Forwardable
-        
+
         attr_accessor :server, :started, :pid
         attr_accessor :retries, :timeout
-        
+
         def start_original_sunspot_session
           @retries ||= 3
           @timeout ||= 20
@@ -46,7 +46,7 @@ module Sunspot
             end
           end
         end
-        
+
         def started?
           not server.nil?
         end
@@ -58,15 +58,17 @@ module Sunspot
         def kill_at_exit
           at_exit { kill_process }
         end
-        
+
         def give_feedback
-          while starting
+          loop.with_index do |_, i|
+            break unless starting
             raise SunspotRefusesToStartError if startup_seconds > @timeout
-            puts 'Sunspot server is starting...'
+
+            STDOUT.write "\rSunspot server is starting...#{'.' * i}"
           end
-          puts "Sunspot server took #{seconds} seconds to start"
+          puts "\nSunspot server took #{seconds} seconds to start"
         end
-      
+
         def starting
           sleep(1)
           Net::HTTP.get_response(URI.parse(uri))
@@ -82,22 +84,22 @@ module Sunspot
         def seconds
           '%.2f' % startup_seconds
         end
-      
+
         def uri
           "http://#{hostname}:#{port}#{path}"
         end
-        
+
         def_delegators :configuration, :hostname, :port, :path
-      
+
         def configuration
           server.send(:configuration)
         end
-        
+
         def clear
           self.server = nil
         end
       end
-      
+
     end
   end
 end
