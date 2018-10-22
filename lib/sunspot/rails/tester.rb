@@ -17,7 +17,7 @@ module Sunspot
 
         def start_original_sunspot_session
           @retries ||= 3
-          @timeout ||= 20
+          @timeout ||= 60
 
           begin
             unless started?
